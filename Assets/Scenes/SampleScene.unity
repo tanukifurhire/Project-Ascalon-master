@@ -485,6 +485,7 @@ GameObject:
   m_Component:
   - component: {fileID: 588601772}
   - component: {fileID: 588601773}
+  - component: {fileID: 588601774}
   m_Layer: 0
   m_Name: PlayerVisual
   m_TagString: Untagged
@@ -532,6 +533,19 @@ Animator:
   m_HasTransformHierarchy: 1
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorControllerStateOnDisable: 0
+--- !u!114 &588601774
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 588601771}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 099494ac3843e264fa6c8182a98421c9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  playerAnimator: {fileID: 588601773}
 --- !u!1 &626727601
 GameObject:
   m_ObjectHideFlags: 0
@@ -587,7 +601,7 @@ Mesh:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: pb_Mesh28164
+  m_Name: pb_Mesh28202
   serializedVersion: 11
   m_SubMeshes:
   - serializedVersion: 2
@@ -1138,6 +1152,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 43c61b60ebac40e488f5e38b6afe8b0b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  state: 0
+  lastState: 0
   rb: {fileID: 1386768020}
   gameInput: {fileID: 1386768021}
   detectCollision: {fileID: 1386768023}
@@ -1146,10 +1162,10 @@ MonoBehaviour:
   acceleration: 4
   moveAcceleration: 20
   handleReturnSpeed: 2
-  jumpForce: 30
-  jumpDecelerationForce: 10
+  jumpForce: 60
+  jumpDecelerationForce: 13
   airborneSpeedMultiplier: 15
-  gravityForce: 7
+  gravityForce: 10
   slopeDownwardsForce: 80
   maxSlopeAngle: 45
 --- !u!114 &1386768023

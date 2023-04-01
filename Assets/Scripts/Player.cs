@@ -6,6 +6,12 @@ using UnityEngine;
 public class Player : MonoBehaviour
 {
     public event EventHandler OnStop;
+    public event EventHandler<OnStateChangedEventArgs> OnStateChanged;
+    public class OnStateChangedEventArgs : EventArgs
+    {
+        public States state;
+        public States lastState;
+    }
     public enum States
     {
         Idle,
@@ -15,7 +21,8 @@ public class Player : MonoBehaviour
         PrepToFly,
         Flying,
     }
-    private States state;
+    public States state;
+    public States lastState;
     public static Player Instance { get; private set; }
 
     [field: Header("References")]
@@ -66,24 +73,48 @@ public class Player : MonoBehaviour
             case States.Idle:
                 if (!detectCollision.CheckGround())
                 {
+                    lastState = state;
                     state = States.Falling;
+                    OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+                    {
+                        state = state,
+                        lastState = lastState,
+                    });
                 }
                 if (ReadMovementInput().magnitude > 0f)
                 {
+                    lastState = state;
                     state = States.Moving;
+                    OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+                    {
+                        state = state,
+                        lastState = lastState
+                    });
                 }
                 break;
             case States.Moving:
                 if (!detectCollision.CheckGround())
                 {
+                    lastState = state;
                     state = States.Falling;
+                    OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+                    {
+                        state = state,
+                        lastState = lastState
+                    });
                 }
                 if (ReadMovementInput().magnitude <= 0f)
                 {
                     if (detectCollision.CheckGround())
                     {
+                        lastState = state;
                         state = States.Idle;
                         OnStop?.Invoke(this, EventArgs.Empty);
+                        OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+                        {
+                            state = state,
+                            lastState = lastState
+                        });
                     }
                 }
                 break;
@@ -92,7 +123,13 @@ public class Player : MonoBehaviour
                 {
                     if (IsPlayerStoppedMovingUpwards())
                     {
+                        lastState = state;
                         state = States.Falling;
+                        OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+                        {
+                            state = state,
+                            lastState = lastState
+                        });
                     }
                 }
                 break;
@@ -101,12 +138,24 @@ public class Player : MonoBehaviour
                 {
                     if (ReadMovementInput().magnitude > 0f)
                     {
+                        lastState = state;
                         state = States.Moving;
+                        OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+                        {
+                            state = state,
+                            lastState = lastState
+                        });
                     }
                     else
                     {
+                        lastState = state;
                         state = States.Idle;
                         OnStop?.Invoke(this, EventArgs.Empty);
+                        OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+                        {
+                            state = state,
+                            lastState = lastState
+                        });
                     }
                 }
                 break;
@@ -193,14 +242,12 @@ public class Player : MonoBehaviour
         actualMoveDirection.y = rb.velocity.y;
         if (OnSlope())
         {
-            Debug.Log("Slope Movement");
             Vector3 slopeTargetVelocity = GetSlopeMoveDirection() * speed;
             Vector3 actualSlopeMoveDirection = Vector3.Lerp(currentVelocity, slopeTargetVelocity, actualAccel * Time.fixedDeltaTime);
             rb.velocity = actualSlopeMoveDirection;
             rb.AddForce(Vector3.down * slopeDownwardsForce, ForceMode.Force);
             return;
         }
-        Debug.Log("Normal Movement");
         rb.velocity = actualMoveDirection;
     }
 
@@ -246,7 +293,13 @@ public class Player : MonoBehaviour
     {
         if (detectCollision.CheckGround())
         {
+            lastState = state;
             state = States.Jumping;
+            OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+            {
+                state = state,
+                lastState = lastState
+            });
             jump = true;
         }
     }
