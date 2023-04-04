@@ -1,9 +1,11 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using Cinemachine;
+using Unity.Netcode;
 using UnityEngine;
 
-public class Player : MonoBehaviour
+public class Player : NetworkBehaviour
 {
     public event EventHandler OnStop;
     public event EventHandler<OnStateChangedEventArgs> OnStateChanged;
@@ -23,12 +25,14 @@ public class Player : MonoBehaviour
     }
     public States state;
     public States lastState;
-    public static Player Instance { get; private set; }
+    public static Player LocalInstance { get; private set; }
 
     [field: Header("References")]
     [SerializeField] private Rigidbody rb;
     [SerializeField] private GameInput gameInput;
     [SerializeField] private DetectCollision detectCollision;
+    [SerializeField] private Transform followTransform;
+
 
     [field: Header("Stats")]
     [SerializeField] private float maxSpeed;
@@ -52,9 +56,11 @@ public class Player : MonoBehaviour
     private float minVelocity = .1f;
     private float playerHeight = 2.5f;
 
+
+    private CinemachineVirtualCamera cinemachineVirtualCamera;
+
     private void Awake()
     {
-        Instance = this;
         state = States.Idle;
     }
 
@@ -64,6 +70,17 @@ public class Player : MonoBehaviour
         GameInput.Instance.OnJump += Player_OnJump;
     }
 
+    public override void OnNetworkSpawn()
+    {
+        if (IsOwner)
+        {
+            LocalInstance = this;
+
+            CameraManager.Instance.SetPlayerCamera(out cinemachineVirtualCamera);
+
+            Debug.Log("Player Initialized");
+        }
+    }
 
     private void Update()
     {
@@ -182,6 +199,11 @@ public class Player : MonoBehaviour
 
     private void FixedUpdate()
     {
+        HandleMovement();
+    }
+
+    private void HandleMovement()
+    {
         if (state == States.Moving)
         {
             float speed = maxSpeed;
@@ -190,7 +212,7 @@ public class Player : MonoBehaviour
             DoMove(speed, moveAccel);
             //StickToGround();
         }
-        
+
         if (state == States.Jumping)
         {
             if (jump && detectCollision.CheckGround())
@@ -317,5 +339,10 @@ public class Player : MonoBehaviour
     private Vector3 GetSlopeMoveDirection()
     {
         return Vector3.ProjectOnPlane(GetPlayerOrientation(), slopeHit.normal).normalized;
+    }
+
+    public Transform GetFollowTransform()
+    {
+        return followTransform;
     }
 }
