@@ -1,14 +1,18 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using Cinemachine;
 using Unity.Netcode;
+using UnityEditor;
+using UnityEngine.UI;
 using UnityEngine;
 
-public class Player : NetworkBehaviour
+public class Player : NetworkBehaviour, ITargetable
 {
     public event EventHandler OnStop;
+
     public event EventHandler<OnStateChangedEventArgs> OnStateChanged;
+
+    public event EventHandler OnDestroyed;
     public class OnStateChangedEventArgs : EventArgs
     {
         public States state;
@@ -23,7 +27,7 @@ public class Player : NetworkBehaviour
         PrepToFly,
         Flying,
     }
-    public States state;
+    private States state;
     public States lastState;
     public static Player LocalInstance { get; private set; }
 
@@ -32,10 +36,13 @@ public class Player : NetworkBehaviour
     [SerializeField] private GameInput gameInput;
     [SerializeField] private DetectCollision detectCollision;
     [SerializeField] private Transform followTransform;
+    [SerializeField] private Image targetSprite;
 
 
     [field: Header("Stats")]
     [SerializeField] private float maxSpeed;
+    [SerializeField] private float prepToFlyMaxSpeed = 10f;
+    [SerializeField] private float flyMaxSpeed = 20f;
     [SerializeField] private float turnSpeed;
     [SerializeField] private float acceleration;
     [SerializeField] private float moveAcceleration = 20f;
@@ -45,6 +52,8 @@ public class Player : NetworkBehaviour
     [SerializeField] private float airborneSpeedMultiplier = .25f;
     [SerializeField] private float gravityForce = 9.81f;
     [SerializeField] private float slopeDownwardsForce = 80f;
+    [SerializeField] private float maxTargetingRange = 22.5f;
+    [SerializeField] private float maxTargetPixelRadius = 150f;
 
     [field: Header("Slope Movement")]
     [SerializeField] private float maxSlopeAngle;
@@ -55,19 +64,33 @@ public class Player : NetworkBehaviour
     private bool jump;
     private float minVelocity = .1f;
     private float playerHeight = 2.5f;
+    private float prepToFlyTimer = .3f;
+    private float jumpBufferTimer = .1f;
 
-
-    private CinemachineVirtualCamera cinemachineVirtualCamera;
+    private List<Transform> playerTargets;
+    private int maxTargets = 10;
+    private Transform target;
 
     private void Awake()
     {
         state = States.Idle;
+
+        playerTargets = new List<Transform>();
     }
 
     private void Start()
     {
         OnStop += Player_OnStop;
         GameInput.Instance.OnJump += Player_OnJump;
+        GameInput.Instance.OnBoost += Player_OnBoost;
+        AscalonGameMultiplayer.Instance.OnPlayerDestroyed += AscalonGameMultiplayer_OnPlayerDestroyed;
+
+        Cursor.lockState = CursorLockMode.Locked;
+    }
+
+    private void AscalonGameMultiplayer_OnPlayerDestroyed(object sender, EventArgs e)
+    {
+        playerTargets.Clear();
     }
 
     public override void OnNetworkSpawn()
@@ -76,14 +99,25 @@ public class Player : NetworkBehaviour
         {
             LocalInstance = this;
 
-            CameraManager.Instance.SetPlayerCamera(out cinemachineVirtualCamera);
+            CameraManager.Instance.SetPlayerCamera();
 
             Debug.Log("Player Initialized");
         }
     }
 
+    public override void OnDestroy()
+    {
+        AscalonGameMultiplayer.Instance.PlayerDestroyed();
+        OnDestroyed?.Invoke(this, EventArgs.Empty);
+    }
+
     private void Update()
     {
+        if (!IsOwner)
+        {
+            return;
+        }
+
         rb.useGravity = !OnSlope();
         switch (state)
         {
@@ -136,6 +170,8 @@ public class Player : NetworkBehaviour
                 }
                 break;
             case States.Jumping:
+                jumpBufferTimer -= Time.deltaTime;
+                
                 if (jump == false)
                 {
                     if (IsPlayerStoppedMovingUpwards())
@@ -149,47 +185,113 @@ public class Player : NetworkBehaviour
                         });
                     }
                 }
+
+                if (jumpBufferTimer <= 0f)
+                {
+                    float jumpBufferTimerMax = 0.1f;
+
+                    jumpBufferTimer = jumpBufferTimerMax;
+
+                    OnGroundCheck();
+                }
+
                 break;
             case States.Falling:
-                if (detectCollision.CheckGround())
-                {
-                    if (ReadMovementInput().magnitude > 0f)
-                    {
-                        lastState = state;
-                        state = States.Moving;
-                        OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-                        {
-                            state = state,
-                            lastState = lastState
-                        });
-                    }
-                    else
-                    {
-                        lastState = state;
-                        state = States.Idle;
-                        OnStop?.Invoke(this, EventArgs.Empty);
-                        OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-                        {
-                            state = state,
-                            lastState = lastState
-                        });
-                    }
-                }
+                OnGroundCheck();
                 break;
             case States.PrepToFly:
 
+                OnGroundCheck();
+
+                prepToFlyTimer -= Time.deltaTime;
+
+                SetFlightRotationConstraint();
+
+                Quaternion targetRot = Quaternion.LookRotation(Camera.main.transform.forward);
+
+                rb.MoveRotation(Quaternion.Slerp(rb.rotation, targetRot, 1 - Mathf.Exp(-10f * Time.deltaTime)));
+
+                if (prepToFlyTimer <= 0)
+                {
+                    float prepToFlyTimerMax = .35f;
+
+                    prepToFlyTimer = prepToFlyTimerMax;
+
+                    lastState = state;
+
+                    state = States.Flying;
+
+                    OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+                    {
+                        state = state,
+                        lastState = lastState
+                    });
+                }
+
                 break;
             case States.Flying:
-                
+
+                rb.MoveRotation(FlightTargetRotation());
+
+                if (target == null)
+                {
+
+                }
+                else
+                {
+                    Vector3 normalDirection = transform.position - target.position;
+                    Vector3 xDirection = Vector3.Cross(Vector3.up, normalDirection);
+                    Vector3 yDirection = Vector3.Cross(xDirection, normalDirection);
+
+                    Vector3 lookDirection = (xDirection + yDirection).normalized;
+
+                }
+
+                OnGroundCheck();
+
                 break;
         }
         //Debug.Log(state);
         if (state != States.Flying)
         {
-            Quaternion targetRot = rb.rotation;
-            targetRot = Quaternion.Euler(0f, Camera.main.transform.eulerAngles.y, 0f);
-            rb.MoveRotation(targetRot);
+            Quaternion targetRot = Quaternion.Euler(0f, Camera.main.transform.eulerAngles.y, 0f);
+            rb.MoveRotation(Quaternion.Slerp(rb.rotation, targetRot, 1 - Mathf.Exp(-10f * Time.deltaTime)));
         }
+
+
+        UpdatePlayerTargetList();
+
+        if (playerTargets.Count > 0)
+        {
+            target = playerTargets[TargetIndex()];
+        }
+        else
+        {
+            target = null;
+        }
+    }
+
+    private int TargetIndex()
+    {
+        float[] distances = new float[playerTargets.Count];
+
+        for (int i = 0; i < playerTargets.Count; i++)
+        {
+            distances[i] = Vector2.Distance(Camera.main.WorldToScreenPoint(playerTargets[i].position), GetScreenCenterSpace());
+        }
+
+        float minDistance = Mathf.Min(distances);
+        int index = 0;
+
+        for (int i = 0; i < distances.Length; i++)
+        {
+            if (minDistance == distances[i])
+            {
+                index = i;
+            }
+        }
+
+        return index;
     }
 
     private void ResetVelocity()
@@ -199,7 +301,10 @@ public class Player : NetworkBehaviour
 
     private void FixedUpdate()
     {
-        HandleMovement();
+        if (IsOwner)
+        {
+            HandleMovement();
+        }
     }
 
     private void HandleMovement()
@@ -239,6 +344,20 @@ public class Player : NetworkBehaviour
             }
 
             rb.AddForce(0f, -gravityForce - GetPlayerVerticalVelocity().y, 0f, ForceMode.VelocityChange);
+        }
+
+        if (state == States.PrepToFly)
+        {
+            if (rb.velocity.magnitude > prepToFlyMaxSpeed)
+            {
+                rb.velocity = rb.velocity.normalized;
+                rb.velocity *= prepToFlyMaxSpeed;
+            }
+        }
+
+        if (state == States.Flying)
+        {
+            rb.velocity = FlightTargetRotation() * Vector3.up * flyMaxSpeed;
         }
     }
 
@@ -284,7 +403,10 @@ public class Player : NetworkBehaviour
     }
     private void Player_OnStop(object sender, EventArgs e)
     {
-        ResetVelocity();
+        if (IsOwner)
+        {
+            ResetVelocity();
+        }
     }
     private void DecelerateVertically()
     {
@@ -326,6 +448,20 @@ public class Player : NetworkBehaviour
         }
     }
 
+    private void Player_OnBoost(object sender, EventArgs e)
+    {
+        if (!detectCollision.CheckGround())
+        {
+            lastState = state;
+            state = States.PrepToFly;
+            OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+            {
+                state = state,
+                lastState = lastState
+            });
+        }
+    }
+
     private bool OnSlope()
     {
         if (Physics.Raycast(transform.position, Vector3.down, out slopeHit, playerHeight * .5f + .3f))
@@ -344,5 +480,129 @@ public class Player : NetworkBehaviour
     public Transform GetFollowTransform()
     {
         return followTransform;
+    }
+
+    private Quaternion FlightTargetRotation()
+    {
+        Quaternion flightTargetRot = Quaternion.LookRotation(-Camera.main.transform.up, Camera.main.transform.forward);
+
+        return flightTargetRot;
+    }
+
+    private void SetFlightRotationConstraint()
+    {
+        rb.constraints = RigidbodyConstraints.FreezeRotationZ;
+    }
+
+    private void SetGroundRotationConstraint()
+    {
+        rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
+    }
+
+    private void OnGroundCheck()
+    {
+        if (detectCollision.CheckGround())
+        {
+            rb.rotation = Quaternion.Euler(0f, rb.rotation.eulerAngles.y, 0f);
+
+            SetGroundRotationConstraint();
+
+            if (ReadMovementInput().magnitude > 0f)
+            {
+                lastState = state;
+                state = States.Moving;
+                OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+                {
+                    state = state,
+                    lastState = lastState
+                });
+            }
+            else
+            {
+                lastState = state;
+                state = States.Idle;
+                OnStop?.Invoke(this, EventArgs.Empty);
+                OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+                {
+                    state = state,
+                    lastState = lastState
+                });
+            }
+        }
+    }
+
+    public States GetPlayerState()
+    {
+        return state;
+    }
+
+    public void AddPlayerToTargetList(Transform target)
+    {
+        if (!playerTargets.Contains(target))
+        {
+            if (IsEnemyRendererVisible(target))
+            {
+                if (Vector2.Distance(Camera.main.WorldToScreenPoint(target.position), GetScreenCenterSpace()) <= (Screen.height / 4))
+                {
+                    playerTargets.Add(target);
+
+                    Debug.Log("Target added to list");
+
+                    AscalonGameMultiplayer.Instance.OnTargetAdd(target);
+                }
+            }
+        }
+    }
+
+    public void UpdatePlayerTargetList()
+    {
+
+        for (int i = 0; i < playerTargets.Count; i++)
+        {
+            float distanceToTarget = Vector3.Distance(playerTargets[i].position, transform.position);
+
+            if (distanceToTarget > maxTargetingRange && playerTargets.Contains(playerTargets[i]))
+            {
+                AscalonGameMultiplayer.Instance.OnTargetRemove(playerTargets[i]);
+
+                playerTargets.Remove(playerTargets[i]);
+
+                Debug.Log("Target removed from list");
+
+                break;
+            }
+
+            if (!IsEnemyRendererVisible(playerTargets[i]) || Vector2.Distance(Camera.main.WorldToScreenPoint(playerTargets[i].position), GetScreenCenterSpace()) > (Screen.height / 4))
+            {
+                if (playerTargets.Contains(playerTargets[i]))
+                {
+                    AscalonGameMultiplayer.Instance.OnTargetRemove(playerTargets[i]);
+
+                    playerTargets.Remove(playerTargets[i]);
+
+                    Debug.Log("Target removed from list");
+                }
+            }
+        }
+    }
+
+    public List<Transform> GetPlayerTargets()
+    {
+        return playerTargets;
+    }
+
+    public Transform GetPlayerTarget()
+    {
+        return target;
+    }
+
+    public Vector2 GetScreenCenterSpace()
+    {
+        return new Vector2(Screen.width / 2, Screen.height / 2);
+    }
+
+    private bool IsEnemyRendererVisible(Transform target)
+    {
+        return target.GetComponentInChildren<Renderer>().IsVisibleFrom(Camera.main);
     }
 }

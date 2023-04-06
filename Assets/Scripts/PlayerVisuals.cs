@@ -27,7 +27,7 @@ public class PlayerVisuals : NetworkBehaviour
 
     private void Update()
     {
-        if (Player.LocalInstance.state == Player.States.Moving)
+        if (Player.LocalInstance.GetPlayerState() == Player.States.Moving)
         {
             playerAnimator.SetFloat(MOVE_Y, (-GameInput.Instance.MovementInputNormalized().y + 1f) / 2);
         }

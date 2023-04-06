@@ -13,7 +13,7 @@ public class DetectCollision : MonoBehaviour
     // Check if there is a floor to stand on, or land on
     public bool CheckGround()
     {
-        Vector3 positionOfCheck = transform.position + (-transform.up * bottomOffset);
+        Vector3 positionOfCheck = transform.position + (Vector3.down * bottomOffset);
         Collider[] hitColliders = Physics.OverlapSphere(positionOfCheck, collisionRadius, groundLayer);
         if (hitColliders.Length > 0)
         {
