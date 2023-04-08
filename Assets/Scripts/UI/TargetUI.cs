@@ -25,7 +25,7 @@ public class TargetUI : MonoBehaviour
 
     private void Target_OnDestroyed(object sender, EventArgs e)
     {
-        Destroy(gameObject);
+
     }
 
     private void OnDestroy()

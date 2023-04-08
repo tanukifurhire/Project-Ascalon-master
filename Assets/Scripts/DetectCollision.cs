@@ -7,8 +7,15 @@ public class DetectCollision : MonoBehaviour
     [SerializeField] private float bottomOffset;
     [SerializeField] private float frontOffset;
     [SerializeField] private float collisionRadius;
+    [SerializeField] private float frontCollisionRadius;
     [SerializeField] private LayerMask groundLayer;
     [SerializeField] private float WallDistance;
+    private List<Player> playerCollisionList;
+
+    private void Awake()
+    {
+        playerCollisionList = new List<Player>();
+    }
 
     // Check if there is a floor to stand on, or land on
     public bool CheckGround()
@@ -24,14 +31,32 @@ public class DetectCollision : MonoBehaviour
 
     public bool CheckWall()
     {
-        Vector3 positionOfWallCheck = transform.position + (transform.forward * frontOffset);
+        Vector3 positionOfWallCheck = transform.position + (transform.up * frontOffset);
         Collider[] hitColliders = Physics.OverlapSphere(positionOfWallCheck, collisionRadius, groundLayer);
         if (hitColliders.Length > 0)
         {
             return true;
         }
-        Debug.Log("unit is not grounded!");
+
         return false;
+    }
+
+    public bool CheckCollisionWithPlayer()
+    {
+        Vector3 positionOfWallCheck = transform.position + (transform.up * frontOffset);
+        Collider[] hitColliders = Physics.OverlapSphere(positionOfWallCheck, frontCollisionRadius);
+
+        bool isCollidingWithPlayer = false;
+        for (int i = 0; i < hitColliders.Length; i++)
+        {
+            if (hitColliders[i].GetComponent<Player>() != null && hitColliders[i].transform != Player.LocalInstance.transform)
+            {
+                isCollidingWithPlayer = true;
+
+                break;
+            }
+        }
+        return isCollidingWithPlayer;
     }
 
     private void OnDrawGizmosSelected()
@@ -41,7 +66,7 @@ public class DetectCollision : MonoBehaviour
         Gizmos.DrawSphere(positionOfCheckVisual, collisionRadius);
         
         Gizmos.color = Color.red;
-        Vector3 positionOfWallCheckVisual = transform.position + (transform.forward * frontOffset);
-        Gizmos.DrawSphere(positionOfWallCheckVisual, collisionRadius);
+        Vector3 positionOfWallCheckVisual = transform.position + (transform.up * frontOffset);
+        Gizmos.DrawSphere(positionOfWallCheckVisual, frontCollisionRadius);
     }
 }

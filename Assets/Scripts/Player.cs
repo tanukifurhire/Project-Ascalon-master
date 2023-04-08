@@ -8,11 +8,14 @@ using UnityEngine;
 
 public class Player : NetworkBehaviour, ITargetable
 {
+    public static Player LocalInstance { get; private set; }
+    
     public event EventHandler OnStop;
+
+    public event EventHandler OnDestroyed;
 
     public event EventHandler<OnStateChangedEventArgs> OnStateChanged;
 
-    public event EventHandler OnDestroyed;
     public class OnStateChangedEventArgs : EventArgs
     {
         public States state;
@@ -26,10 +29,10 @@ public class Player : NetworkBehaviour, ITargetable
         Falling,
         PrepToFly,
         Flying,
+        Hover,
     }
     private States state;
     public States lastState;
-    public static Player LocalInstance { get; private set; }
 
     [field: Header("References")]
     [SerializeField] private Rigidbody rb;
@@ -38,12 +41,12 @@ public class Player : NetworkBehaviour, ITargetable
     [SerializeField] private Transform followTransform;
     [SerializeField] private Image targetSprite;
 
-
     [field: Header("Stats")]
     [SerializeField] private float maxSpeed;
     [SerializeField] private float prepToFlyMaxSpeed = 10f;
     [SerializeField] private float flyMaxSpeed = 20f;
-    [SerializeField] private float turnSpeed;
+    [SerializeField] private float lateralFlightSpeed = 5f;
+    [SerializeField] private float turnSpeed = 200f;
     [SerializeField] private float acceleration;
     [SerializeField] private float moveAcceleration = 20f;
     [SerializeField] private float handleReturnSpeed = 2f;
@@ -52,24 +55,28 @@ public class Player : NetworkBehaviour, ITargetable
     [SerializeField] private float airborneSpeedMultiplier = .25f;
     [SerializeField] private float gravityForce = 9.81f;
     [SerializeField] private float slopeDownwardsForce = 80f;
-    [SerializeField] private float maxTargetingRange = 22.5f;
-    [SerializeField] private float maxTargetPixelRadius = 150f;
+    [SerializeField] private float maxTargetingRange = 37.5f;
 
     [field: Header("Slope Movement")]
     [SerializeField] private float maxSlopeAngle;
     [SerializeField] private RaycastHit slopeHit;
 
-    private Vector3 targetDir;
     private float actualAccel;
     private bool jump;
     private float minVelocity = .1f;
     private float playerHeight = 2.5f;
     private float prepToFlyTimer = .3f;
     private float jumpBufferTimer = .1f;
+    private float boostTimer = 2.5f;
+    private Vector2 smoothedInput;
+    private Vector2 smoothVectorVelocity;
 
+    // Targeting Variables
     private List<Transform> playerTargets;
-    private int maxTargets = 10;
     private Transform target;
+    private bool isPlayerTryingToTarget;
+
+    #region Unity Default Methods
 
     private void Awake()
     {
@@ -83,14 +90,10 @@ public class Player : NetworkBehaviour, ITargetable
         OnStop += Player_OnStop;
         GameInput.Instance.OnJump += Player_OnJump;
         GameInput.Instance.OnBoost += Player_OnBoost;
-        AscalonGameMultiplayer.Instance.OnPlayerDestroyed += AscalonGameMultiplayer_OnPlayerDestroyed;
+        GameInput.Instance.OnTargetPressed += Player_OnTargetPressed;
+        GameInput.Instance.OnTargetReleased += Player_OnTargetReleased;
 
         Cursor.lockState = CursorLockMode.Locked;
-    }
-
-    private void AscalonGameMultiplayer_OnPlayerDestroyed(object sender, EventArgs e)
-    {
-        playerTargets.Clear();
     }
 
     public override void OnNetworkSpawn()
@@ -107,8 +110,16 @@ public class Player : NetworkBehaviour, ITargetable
 
     public override void OnDestroy()
     {
-        AscalonGameMultiplayer.Instance.PlayerDestroyed();
         OnDestroyed?.Invoke(this, EventArgs.Empty);
+    }
+    private void Player_OnDestroyed(object sender, EventArgs e)
+    {
+        Player player = sender as Player;
+
+        if (playerTargets.Contains(player.transform))
+        {
+            playerTargets.Remove(player.transform);
+        }
     }
 
     private void Update()
@@ -119,6 +130,268 @@ public class Player : NetworkBehaviour, ITargetable
         }
 
         rb.useGravity = !OnSlope();
+
+        HandleTargets();
+    }
+    private void FixedUpdate()
+    {
+        if (IsOwner)
+        {
+            HandleState();
+
+            HandleMovement();
+        }
+    }
+
+    #endregion
+
+    #region Movement Methods
+
+    private void HandleMovement()
+    {
+        if (state == States.Moving)
+        {
+            float speed = maxSpeed;
+            float moveAccel = moveAcceleration;
+
+            DoMove(speed, moveAccel);
+        }
+
+        if (state == States.Jumping)
+        {
+            if (jump == true)
+            {
+                jump = false;
+
+                rb.AddForce((Vector3.up * jumpForce) + GetPlayerOrientation(), ForceMode.VelocityChange);
+            }
+
+            if (IsPlayerMovingUpwards())
+            {
+                DecelerateVertically();
+            }
+
+            rb.AddForce((GetPlayerOrientation() * airborneSpeedMultiplier) - GetPlayerHorizontalVelocity(), ForceMode.Acceleration);
+        }
+
+        if (state == States.Falling)
+        {
+            rb.AddForce((GetPlayerOrientation() * airborneSpeedMultiplier) - GetPlayerHorizontalVelocity(), ForceMode.Acceleration);
+
+            if (GetPlayerVerticalVelocity().y > gravityForce)
+            {
+                return;
+            }
+
+            rb.AddForce(0f, -gravityForce - GetPlayerVerticalVelocity().y, 0f, ForceMode.VelocityChange);
+        }
+
+        if (state == States.PrepToFly)
+        {
+            if (rb.velocity.magnitude > prepToFlyMaxSpeed)
+            {
+                rb.velocity = rb.velocity.normalized;
+                rb.velocity *= prepToFlyMaxSpeed;
+            }
+        }
+
+        if (state == States.Flying)
+        {   
+            rb.velocity = FlightTargetRotation() * Vector3.up * flyMaxSpeed;
+
+            Vector3 moveVel = (transform.right * GameInput.Instance.MovementInputNormalized().x);
+
+            rb.velocity += moveVel * lateralFlightSpeed;
+        }
+
+        if (state == States.Hover)
+        {
+            float speed = maxSpeed;
+            float moveAccel = moveAcceleration;
+
+            DoMove(speed, moveAccel);
+        }
+    }
+
+    private void DoMove(float speed, float moveAccel)
+    {
+        Vector3 targetVelocity = GetPlayerOrientation() * speed;
+        actualAccel = Mathf.Lerp(actualAccel, moveAccel, handleReturnSpeed * Time.fixedDeltaTime);
+        Vector3 currentVelocity = rb.velocity;
+        Vector3 actualMoveDirection = Vector3.Lerp(currentVelocity, targetVelocity, actualAccel * Time.fixedDeltaTime);
+        actualMoveDirection.y = rb.velocity.y;
+        if (OnSlope())
+        {
+            Vector3 slopeTargetVelocity = GetSlopeMoveDirection() * speed;
+            Vector3 actualSlopeMoveDirection = Vector3.Lerp(currentVelocity, slopeTargetVelocity, actualAccel * Time.fixedDeltaTime);
+            rb.velocity = actualSlopeMoveDirection;
+            rb.AddForce(Vector3.down * slopeDownwardsForce, ForceMode.Force);
+            return;
+        }
+        rb.velocity = actualMoveDirection;
+    }
+
+    #endregion
+
+    #region Targeting Methods
+
+    private void HandleTargets()
+    {
+        UpdatePlayerTargetList();
+
+        if (playerTargets.Count > 0)
+        {
+            target = playerTargets[TargetIndex()];
+        }
+        else
+        {
+            target = null;
+        }
+    }
+
+    private int TargetIndex()
+    {
+        float[] distances = new float[playerTargets.Count];
+
+        for (int i = 0; i < playerTargets.Count; i++)
+        {
+            distances[i] = Vector2.Distance(Camera.main.WorldToScreenPoint(playerTargets[i].position), GetScreenCenterSpace());
+        }
+
+        float minDistance = Mathf.Min(distances);
+        int index = 0;
+
+        for (int i = 0; i < distances.Length; i++)
+        {
+            if (minDistance == distances[i])
+            {
+                index = i;
+            }
+        }
+
+        return index;
+    }
+
+    public void AddPlayerToTargetList(Transform target)
+    {
+        if (!playerTargets.Contains(target))
+        {
+            if (IsEnemyRendererVisible(target))
+            {
+                if (Vector2.Distance(Camera.main.WorldToScreenPoint(target.position), GetScreenCenterSpace()) <= (Screen.height / 2.5f))
+                {
+                    playerTargets.Add(target);
+
+                    target.GetComponent<Player>().OnDestroyed += Player_OnDestroyed;
+
+                    Debug.Log("Target added to list");
+
+                    AscalonGameMultiplayer.Instance.OnTargetAdd(target);
+                }
+            }
+        }
+    }
+
+    public void UpdatePlayerTargetList()
+    {
+
+        for (int i = 0; i < playerTargets.Count; i++)
+        {
+            float distanceToTarget = Vector3.Distance(playerTargets[i].position, transform.position);
+
+            if (distanceToTarget > maxTargetingRange && playerTargets.Contains(playerTargets[i]))
+            {
+                AscalonGameMultiplayer.Instance.OnTargetRemove(playerTargets[i]);
+
+                playerTargets[i].GetComponent<Player>().OnDestroyed -= Player_OnDestroyed;
+
+                playerTargets.Remove(playerTargets[i]);
+
+                Debug.Log("Target removed from list");
+
+                break;
+            }
+
+            if (!IsEnemyRendererVisible(playerTargets[i]) || Vector2.Distance(Camera.main.WorldToScreenPoint(playerTargets[i].position), GetScreenCenterSpace()) > (Screen.height / 2.5f))
+            {
+                if (playerTargets.Contains(playerTargets[i]))
+                {
+                    AscalonGameMultiplayer.Instance.OnTargetRemove(playerTargets[i]);
+
+                    playerTargets[i].GetComponent<Player>().OnDestroyed -= Player_OnDestroyed;
+
+                    playerTargets.Remove(playerTargets[i]);
+
+                    Debug.Log("Target removed from list");
+                }
+            }
+        }
+    }
+
+    public List<Transform> GetPlayerTargets()
+    {
+        return playerTargets;
+    }
+
+    public Transform GetPlayerTarget()
+    {
+        return target;
+    }
+
+    #endregion
+
+    #region Input Methods
+
+    private Vector3 ReadMovementInput()
+    {
+        return new Vector3(gameInput.MovementInputNormalized().x, 0f, gameInput.MovementInputNormalized().y);
+    }
+
+    private void Player_OnJump(object sender, EventArgs e)
+    {
+        if (detectCollision.CheckGround())
+        {
+            lastState = state;
+            state = States.Jumping;
+            OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+            {
+                state = state,
+                lastState = lastState
+            });
+            jump = true;
+        }
+    }
+
+    private void Player_OnBoost(object sender, EventArgs e)
+    {
+        if (!detectCollision.CheckGround())
+        {
+            lastState = state;
+            state = States.PrepToFly;
+            OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+            {
+                state = state,
+                lastState = lastState
+            });
+        }
+    }
+
+    private void Player_OnTargetReleased(object sender, EventArgs e)
+    {
+        isPlayerTryingToTarget = false;
+    }
+
+    private void Player_OnTargetPressed(object sender, EventArgs e)
+    {
+        isPlayerTryingToTarget = true;
+    }
+
+    #endregion
+
+    #region State Methods
+
+    private void HandleState()
+    {
         switch (state)
         {
             case States.Idle:
@@ -171,7 +444,7 @@ public class Player : NetworkBehaviour, ITargetable
                 break;
             case States.Jumping:
                 jumpBufferTimer -= Time.deltaTime;
-                
+
                 if (jump == false)
                 {
                     if (IsPlayerStoppedMovingUpwards())
@@ -188,10 +461,6 @@ public class Player : NetworkBehaviour, ITargetable
 
                 if (jumpBufferTimer <= 0f)
                 {
-                    float jumpBufferTimerMax = 0.1f;
-
-                    jumpBufferTimer = jumpBufferTimerMax;
-
                     OnGroundCheck();
                 }
 
@@ -201,15 +470,13 @@ public class Player : NetworkBehaviour, ITargetable
                 break;
             case States.PrepToFly:
 
+                rb.MoveRotation(Quaternion.RotateTowards(transform.rotation, FlightTargetRotation(), turnSpeed * Time.deltaTime));
+
                 OnGroundCheck();
 
                 prepToFlyTimer -= Time.deltaTime;
 
                 SetFlightRotationConstraint();
-
-                Quaternion targetRot = Quaternion.LookRotation(Camera.main.transform.forward);
-
-                rb.MoveRotation(Quaternion.Slerp(rb.rotation, targetRot, 1 - Mathf.Exp(-10f * Time.deltaTime)));
 
                 if (prepToFlyTimer <= 0)
                 {
@@ -231,176 +498,55 @@ public class Player : NetworkBehaviour, ITargetable
                 break;
             case States.Flying:
 
-                rb.MoveRotation(FlightTargetRotation());
+                turnSpeed = 360f;
 
-                if (target == null)
-                {
-
-                }
-                else
-                {
-                    Vector3 normalDirection = transform.position - target.position;
-                    Vector3 xDirection = Vector3.Cross(Vector3.up, normalDirection);
-                    Vector3 yDirection = Vector3.Cross(xDirection, normalDirection);
-
-                    Vector3 lookDirection = (xDirection + yDirection).normalized;
-
-                }
+                rb.MoveRotation(Quaternion.RotateTowards(transform.rotation, FlightTargetRotation(), turnSpeed * Time.deltaTime));
 
                 OnGroundCheck();
 
+                if (detectCollision.CheckCollisionWithPlayer())
+                {
+                    lastState = state;
+
+                    state = States.Hover;
+
+                    OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+                    {
+                        state = state,
+                        lastState = lastState
+                    });
+                }
+
+                break;
+            case States.Hover:
+
+                OnGroundCheck();
+
+                SetGroundRotationConstraint();
+
+                ResetVerticalVelocity();
+
+                Quaternion targetRot = Quaternion.LookRotation(Camera.main.transform.forward);
+
+                rb.MoveRotation(Quaternion.RotateTowards(transform.rotation, targetRot, turnSpeed * Time.deltaTime));
+
+                rb.useGravity = false;
+
                 break;
         }
-        //Debug.Log(state);
-        if (state != States.Flying)
+
+        if (state != States.Flying && state != States.PrepToFly && state != States.Hover)
         {
+            turnSpeed = 2000f;
+
             Quaternion targetRot = Quaternion.Euler(0f, Camera.main.transform.eulerAngles.y, 0f);
-            rb.MoveRotation(Quaternion.Slerp(rb.rotation, targetRot, 1 - Mathf.Exp(-10f * Time.deltaTime)));
+
+            rb.MoveRotation(Quaternion.RotateTowards(transform.rotation, targetRot, turnSpeed * Time.deltaTime));
         }
 
-
-        UpdatePlayerTargetList();
-
-        if (playerTargets.Count > 0)
-        {
-            target = playerTargets[TargetIndex()];
-        }
-        else
-        {
-            target = null;
-        }
+        FlightTargetHandler.Instance.SetFlightPosition(transform.position);
     }
 
-    private int TargetIndex()
-    {
-        float[] distances = new float[playerTargets.Count];
-
-        for (int i = 0; i < playerTargets.Count; i++)
-        {
-            distances[i] = Vector2.Distance(Camera.main.WorldToScreenPoint(playerTargets[i].position), GetScreenCenterSpace());
-        }
-
-        float minDistance = Mathf.Min(distances);
-        int index = 0;
-
-        for (int i = 0; i < distances.Length; i++)
-        {
-            if (minDistance == distances[i])
-            {
-                index = i;
-            }
-        }
-
-        return index;
-    }
-
-    private void ResetVelocity()
-    {
-        rb.velocity = Vector3.zero;
-    }
-
-    private void FixedUpdate()
-    {
-        if (IsOwner)
-        {
-            HandleMovement();
-        }
-    }
-
-    private void HandleMovement()
-    {
-        if (state == States.Moving)
-        {
-            float speed = maxSpeed;
-            float moveAccel = moveAcceleration;
-
-            DoMove(speed, moveAccel);
-            //StickToGround();
-        }
-
-        if (state == States.Jumping)
-        {
-            if (jump && detectCollision.CheckGround())
-            {
-                rb.AddForce((Vector3.up * jumpForce) + GetPlayerOrientation(), ForceMode.Impulse);
-                jump = false;
-            }
-
-            if (IsPlayerMovingUpwards())
-            {
-                DecelerateVertically();
-            }
-
-            rb.AddForce((GetPlayerOrientation() * airborneSpeedMultiplier) - GetPlayerHorizontalVelocity(), ForceMode.Acceleration);
-        }
-
-        if (state == States.Falling)
-        {
-            rb.AddForce((GetPlayerOrientation() * airborneSpeedMultiplier) - GetPlayerHorizontalVelocity(), ForceMode.Acceleration);
-
-            if (GetPlayerVerticalVelocity().y > gravityForce)
-            {
-                return;
-            }
-
-            rb.AddForce(0f, -gravityForce - GetPlayerVerticalVelocity().y, 0f, ForceMode.VelocityChange);
-        }
-
-        if (state == States.PrepToFly)
-        {
-            if (rb.velocity.magnitude > prepToFlyMaxSpeed)
-            {
-                rb.velocity = rb.velocity.normalized;
-                rb.velocity *= prepToFlyMaxSpeed;
-            }
-        }
-
-        if (state == States.Flying)
-        {
-            rb.velocity = FlightTargetRotation() * Vector3.up * flyMaxSpeed;
-        }
-    }
-
-    private Vector3 GetPlayerOrientation()
-    {
-        Vector3 screenMovementForward = transform.forward;
-        Vector3 screenMovementRight = transform.right;
-
-        Vector3 horizontalMovement = screenMovementRight * ReadMovementInput().x;
-        Vector3 verticalMovement = screenMovementForward * ReadMovementInput().z;
-
-        Vector3 moveDirection = (verticalMovement + horizontalMovement).normalized;
-
-        return moveDirection;
-    }
-
-    private void DoMove(float speed, float moveAccel)
-    {
-        Vector3 targetVelocity = GetPlayerOrientation() * speed;
-        actualAccel = Mathf.Lerp(actualAccel, moveAccel, handleReturnSpeed * Time.fixedDeltaTime);
-        Vector3 currentVelocity = rb.velocity;
-        Vector3 actualMoveDirection = Vector3.Lerp(currentVelocity, targetVelocity, actualAccel * Time.fixedDeltaTime);
-        actualMoveDirection.y = rb.velocity.y;
-        if (OnSlope())
-        {
-            Vector3 slopeTargetVelocity = GetSlopeMoveDirection() * speed;
-            Vector3 actualSlopeMoveDirection = Vector3.Lerp(currentVelocity, slopeTargetVelocity, actualAccel * Time.fixedDeltaTime);
-            rb.velocity = actualSlopeMoveDirection;
-            rb.AddForce(Vector3.down * slopeDownwardsForce, ForceMode.Force);
-            return;
-        }
-        rb.velocity = actualMoveDirection;
-    }
-
-    private void StickToGround()
-    {
-        rb.AddForce(-Vector3.up - GetPlayerVerticalVelocity());
-    }
-
-    private Vector3 ReadMovementInput()
-    {
-        return new Vector3(gameInput.MovementInputNormalized().x, 0f, gameInput.MovementInputNormalized().y);
-    }
     private void Player_OnStop(object sender, EventArgs e)
     {
         if (IsOwner)
@@ -408,99 +554,13 @@ public class Player : NetworkBehaviour, ITargetable
             ResetVelocity();
         }
     }
-    private void DecelerateVertically()
-    {
-        Vector3 verticalVelocity = GetPlayerVerticalVelocity();
-
-        rb.AddForce(-verticalVelocity * jumpDecelerationForce, ForceMode.Acceleration);
-    }
-
-    private bool IsPlayerStoppedMovingUpwards()
-    {
-        return GetPlayerVerticalVelocity().y <= minVelocity;
-    }
-
-    private bool IsPlayerMovingUpwards()
-    {
-        return GetPlayerVerticalVelocity().y > minVelocity;
-    }
-
-    private Vector3 GetPlayerVerticalVelocity()
-    {
-        return new Vector3(0f, rb.velocity.y, 0f);
-    }
-    private Vector3 GetPlayerHorizontalVelocity()
-    {
-        return new Vector3(rb.velocity.x, 0f, rb.velocity.z);
-    }
-    private void Player_OnJump(object sender, EventArgs e)
-    {
-        if (detectCollision.CheckGround())
-        {
-            lastState = state;
-            state = States.Jumping;
-            OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-            {
-                state = state,
-                lastState = lastState
-            });
-            jump = true;
-        }
-    }
-
-    private void Player_OnBoost(object sender, EventArgs e)
-    {
-        if (!detectCollision.CheckGround())
-        {
-            lastState = state;
-            state = States.PrepToFly;
-            OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-            {
-                state = state,
-                lastState = lastState
-            });
-        }
-    }
-
-    private bool OnSlope()
-    {
-        if (Physics.Raycast(transform.position, Vector3.down, out slopeHit, playerHeight * .5f + .3f))
-        {
-            float angle = Vector3.Angle(Vector3.up, slopeHit.normal);
-            return angle < maxSlopeAngle && angle != 0;
-        }
-        return false;
-    }
-
-    private Vector3 GetSlopeMoveDirection()
-    {
-        return Vector3.ProjectOnPlane(GetPlayerOrientation(), slopeHit.normal).normalized;
-    }
-
-    public Transform GetFollowTransform()
-    {
-        return followTransform;
-    }
-
-    private Quaternion FlightTargetRotation()
-    {
-        Quaternion flightTargetRot = Quaternion.LookRotation(-Camera.main.transform.up, Camera.main.transform.forward);
-
-        return flightTargetRot;
-    }
-
-    private void SetFlightRotationConstraint()
-    {
-        rb.constraints = RigidbodyConstraints.FreezeRotationZ;
-    }
-
-    private void SetGroundRotationConstraint()
-    {
-        rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
-    }
 
     private void OnGroundCheck()
     {
+        float jumpBufferTimerMax = 0.1f;
+
+        jumpBufferTimer = jumpBufferTimerMax;
+
         if (detectCollision.CheckGround())
         {
             rb.rotation = Quaternion.Euler(0f, rb.rotation.eulerAngles.y, 0f);
@@ -536,64 +596,120 @@ public class Player : NetworkBehaviour, ITargetable
         return state;
     }
 
-    public void AddPlayerToTargetList(Transform target)
+    #endregion
+
+    #region Reusable Methods
+
+    private void ResetVelocity()
     {
-        if (!playerTargets.Contains(target))
+        rb.velocity = Vector3.zero;
+    }
+
+    private void ResetVerticalVelocity()
+    {
+        rb.velocity = new Vector3(rb.velocity.x, 0f, rb.velocity.z);
+    }
+
+    private Vector3 GetPlayerOrientation()
+    {
+        Vector3 screenMovementForward = Vector3.Cross(transform.right, Vector3.up);
+        Vector3 screenMovementRight = transform.right;
+
+        Vector3 horizontalMovement = screenMovementRight * ReadMovementInput().x;
+        Vector3 verticalMovement = screenMovementForward * ReadMovementInput().z;
+
+        Vector3 moveDirection = (verticalMovement + horizontalMovement).normalized;
+
+        return moveDirection;
+    }
+
+    private void DecelerateVertically()
+    {
+        Vector3 verticalVelocity = GetPlayerVerticalVelocity();
+
+        rb.AddForce(-verticalVelocity * jumpDecelerationForce, ForceMode.Acceleration);
+    }
+
+    private bool IsPlayerStoppedMovingUpwards()
+    {
+        return GetPlayerVerticalVelocity().y <= minVelocity;
+    }
+
+    private bool IsPlayerMovingUpwards()
+    {
+        return GetPlayerVerticalVelocity().y > minVelocity;
+    }
+
+    private Vector3 GetPlayerVerticalVelocity()
+    {
+        return new Vector3(0f, rb.velocity.y, 0f);
+    }
+    private Vector3 GetPlayerHorizontalVelocity()
+    {
+        return new Vector3(rb.velocity.x, 0f, rb.velocity.z);
+    }
+
+    private bool OnSlope()
+    {
+        if (Physics.Raycast(transform.position, Vector3.down, out slopeHit, playerHeight * .5f + .3f))
         {
-            if (IsEnemyRendererVisible(target))
+            float angle = Vector3.Angle(Vector3.up, slopeHit.normal);
+            return angle < maxSlopeAngle && angle != 0;
+        }
+        return false;
+    }
+
+    private Vector3 GetSlopeMoveDirection()
+    {
+        return Vector3.ProjectOnPlane(GetPlayerOrientation(), slopeHit.normal).normalized;
+    }
+
+    public Transform GetFollowTransform()
+    {
+        return followTransform;
+    }
+
+    private Quaternion FlightTargetRotation()
+    {
+        var targetRot = Quaternion.LookRotation(-Camera.main.transform.up, Camera.main.transform.forward);
+
+        if (target != null && isPlayerTryingToTarget)
+        {
+            FlightTargetHandler.Instance.SetFlightRotation();
+
+            targetRot = Quaternion.LookRotation(-FlightTargetHandler.Instance.transform.up, FlightTargetHandler.Instance.GetFlightDirection());
+
+            float dist = Vector3.Distance(target.position, transform.position);
+
+            if (Mathf.Abs(target.position.y - transform.position.y) >= dist / 1.5f)
             {
-                if (Vector2.Distance(Camera.main.WorldToScreenPoint(target.position), GetScreenCenterSpace()) <= (Screen.height / 4))
-                {
-                    playerTargets.Add(target);
-
-                    Debug.Log("Target added to list");
-
-                    AscalonGameMultiplayer.Instance.OnTargetAdd(target);
-                }
+                targetRot = Quaternion.LookRotation(-Camera.main.transform.up, Camera.main.transform.forward);
             }
         }
+
+        return targetRot;
     }
 
-    public void UpdatePlayerTargetList()
-    {
+    
 
-        for (int i = 0; i < playerTargets.Count; i++)
+    private float AddCameraRotationToAngle(float angle)
+    {
+        angle += Camera.main.transform.eulerAngles.y;
+        if (angle > 360f)
         {
-            float distanceToTarget = Vector3.Distance(playerTargets[i].position, transform.position);
-
-            if (distanceToTarget > maxTargetingRange && playerTargets.Contains(playerTargets[i]))
-            {
-                AscalonGameMultiplayer.Instance.OnTargetRemove(playerTargets[i]);
-
-                playerTargets.Remove(playerTargets[i]);
-
-                Debug.Log("Target removed from list");
-
-                break;
-            }
-
-            if (!IsEnemyRendererVisible(playerTargets[i]) || Vector2.Distance(Camera.main.WorldToScreenPoint(playerTargets[i].position), GetScreenCenterSpace()) > (Screen.height / 4))
-            {
-                if (playerTargets.Contains(playerTargets[i]))
-                {
-                    AscalonGameMultiplayer.Instance.OnTargetRemove(playerTargets[i]);
-
-                    playerTargets.Remove(playerTargets[i]);
-
-                    Debug.Log("Target removed from list");
-                }
-            }
+            angle -= 360f;
         }
+        return angle;
     }
 
-    public List<Transform> GetPlayerTargets()
+    private void SetFlightRotationConstraint()
     {
-        return playerTargets;
+        rb.constraints = RigidbodyConstraints.FreezeRotationY;
     }
 
-    public Transform GetPlayerTarget()
+    private void SetGroundRotationConstraint()
     {
-        return target;
+        rb.constraints = RigidbodyConstraints.FreezeRotationX | RigidbodyConstraints.FreezeRotationZ;
     }
 
     public Vector2 GetScreenCenterSpace()
@@ -604,5 +720,17 @@ public class Player : NetworkBehaviour, ITargetable
     private bool IsEnemyRendererVisible(Transform target)
     {
         return target.GetComponentInChildren<Renderer>().IsVisibleFrom(Camera.main);
+    }
+
+    public Quaternion GetRigidbodyRotation()
+    {
+        return rb.rotation;
+    }
+
+    #endregion
+
+    private void OnDrawGizmos()
+    {
+
     }
 }

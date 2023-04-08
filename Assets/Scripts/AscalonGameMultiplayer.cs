@@ -39,23 +39,4 @@ public class AscalonGameMultiplayer : NetworkBehaviour
             target = target
         });
     }
-
-    public void PlayerDestroyed()
-    {
-        PlayerDestroyedServerRpc();
-    }
-
-    [ServerRpc(RequireOwnership = false)]
-    private void PlayerDestroyedServerRpc()
-    {
-        PlayerDestroyedClientRpc();
-    }
-
-    [ClientRpc]
-    private void PlayerDestroyedClientRpc()
-    {
-        OnPlayerDestroyed?.Invoke(this, EventArgs.Empty);
-
-        Debug.Log("Player Destroyed!");
-    }
 }

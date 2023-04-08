@@ -40,7 +40,20 @@ public class TargetUIManager : MonoBehaviour
 
     private void Player_OnDestroyed(object sender, EventArgs e)
     {
-        playerTargetList.Clear();
+        Player player = sender as Player;
+
+        if (playerTargetList.Contains(player.transform))
+        {
+            playerTargetList.Remove(player.transform);
+        }
+
+        foreach (Transform child in transform)
+        {
+            if (child.GetComponent<TargetUI>().GetTarget() == player.transform)
+            {
+                Destroy(child.gameObject);
+            }
+        }
     }
 
     private void AscalonGameMultiplayer_OnTargetAdded(object sender, AscalonGameMultiplayer.OnTargetChangedEventArgs e)
