@@ -196,8 +196,8 @@ public class Player : NetworkBehaviour, ITargetable
         }
 
         if (state == States.Flying)
-        {   
-            rb.velocity = FlightTargetRotation() * Vector3.up * flyMaxSpeed;
+        {
+            rb.AddForce((FlightTargetRotation() * Vector3.up * flyMaxSpeed) - rb.velocity, ForceMode.VelocityChange);
 
             Vector3 moveVel = (transform.right * GameInput.Instance.MovementInputNormalized().x);
 
