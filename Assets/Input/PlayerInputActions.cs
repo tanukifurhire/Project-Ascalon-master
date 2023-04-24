@@ -80,6 +80,15 @@ public partial class @PlayerInputActions: IInputActionCollection2, IDisposable
                     ""processors"": """",
                     ""interactions"": """",
                     ""initialStateCheck"": false
+                },
+                {
+                    ""name"": ""Disc1"",
+                    ""type"": ""Button"",
+                    ""id"": ""4acb8b71-b949-4349-b6ca-d2b4c9eb5aa8"",
+                    ""expectedControlType"": ""Button"",
+                    ""processors"": """",
+                    ""interactions"": """",
+                    ""initialStateCheck"": false
                 }
             ],
             ""bindings"": [
@@ -192,6 +201,17 @@ public partial class @PlayerInputActions: IInputActionCollection2, IDisposable
                     ""action"": ""Hover"",
                     ""isComposite"": false,
                     ""isPartOfComposite"": false
+                },
+                {
+                    ""name"": """",
+                    ""id"": ""2aab8f1c-bd3b-40ce-a36f-b769a0a58d71"",
+                    ""path"": ""<Keyboard>/1"",
+                    ""interactions"": """",
+                    ""processors"": """",
+                    ""groups"": """",
+                    ""action"": ""Disc1"",
+                    ""isComposite"": false,
+                    ""isPartOfComposite"": false
                 }
             ]
         }
@@ -206,6 +226,7 @@ public partial class @PlayerInputActions: IInputActionCollection2, IDisposable
         m_Player_Boost = m_Player.FindAction("Boost", throwIfNotFound: true);
         m_Player_Target = m_Player.FindAction("Target", throwIfNotFound: true);
         m_Player_Hover = m_Player.FindAction("Hover", throwIfNotFound: true);
+        m_Player_Disc1 = m_Player.FindAction("Disc1", throwIfNotFound: true);
     }
 
     public void Dispose()
@@ -273,6 +294,7 @@ public partial class @PlayerInputActions: IInputActionCollection2, IDisposable
     private readonly InputAction m_Player_Boost;
     private readonly InputAction m_Player_Target;
     private readonly InputAction m_Player_Hover;
+    private readonly InputAction m_Player_Disc1;
     public struct PlayerActions
     {
         private @PlayerInputActions m_Wrapper;
@@ -283,6 +305,7 @@ public partial class @PlayerInputActions: IInputActionCollection2, IDisposable
         public InputAction @Boost => m_Wrapper.m_Player_Boost;
         public InputAction @Target => m_Wrapper.m_Player_Target;
         public InputAction @Hover => m_Wrapper.m_Player_Hover;
+        public InputAction @Disc1 => m_Wrapper.m_Player_Disc1;
         public InputActionMap Get() { return m_Wrapper.m_Player; }
         public void Enable() { Get().Enable(); }
         public void Disable() { Get().Disable(); }
@@ -310,6 +333,9 @@ public partial class @PlayerInputActions: IInputActionCollection2, IDisposable
             @Hover.started += instance.OnHover;
             @Hover.performed += instance.OnHover;
             @Hover.canceled += instance.OnHover;
+            @Disc1.started += instance.OnDisc1;
+            @Disc1.performed += instance.OnDisc1;
+            @Disc1.canceled += instance.OnDisc1;
         }
 
         private void UnregisterCallbacks(IPlayerActions instance)
@@ -332,6 +358,9 @@ public partial class @PlayerInputActions: IInputActionCollection2, IDisposable
             @Hover.started -= instance.OnHover;
             @Hover.performed -= instance.OnHover;
             @Hover.canceled -= instance.OnHover;
+            @Disc1.started -= instance.OnDisc1;
+            @Disc1.performed -= instance.OnDisc1;
+            @Disc1.canceled -= instance.OnDisc1;
         }
 
         public void RemoveCallbacks(IPlayerActions instance)
@@ -357,5 +386,6 @@ public partial class @PlayerInputActions: IInputActionCollection2, IDisposable
         void OnBoost(InputAction.CallbackContext context);
         void OnTarget(InputAction.CallbackContext context);
         void OnHover(InputAction.CallbackContext context);
+        void OnDisc1(InputAction.CallbackContext context);
     }
 }

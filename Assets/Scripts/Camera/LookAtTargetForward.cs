@@ -18,17 +18,17 @@ public class LookAtTargetForward : MonoBehaviour
 
             if (Player.LocalInstance.GetPlayerState() != Player.States.Flying)
             {
-                if (Player.LocalInstance.GetPlayerTarget() == null)
+                if (Player.LocalInstance.GetActivePlayerTarget() == null)
                 {
                     Quaternion rotation = Player.LocalInstance.transform.rotation;
 
                     transform.rotation = rotation;
                 }
 
-                if (Player.LocalInstance.GetPlayerTarget() != null)
+                if (Player.LocalInstance.GetActivePlayerTarget() != null)
                 {
 
-                    Vector3 direction = Player.LocalInstance.GetPlayerTarget().transform.position - Player.LocalInstance.transform.position;
+                    Vector3 direction = Player.LocalInstance.GetActivePlayerTarget().transform.position - Player.LocalInstance.transform.position;
 
                     Quaternion rotation = Quaternion.LookRotation(direction);
 
@@ -37,14 +37,14 @@ public class LookAtTargetForward : MonoBehaviour
             }
             else
             {
-                if (Player.LocalInstance.GetPlayerTarget() == null)
+                if (Player.LocalInstance.GetActivePlayerTarget() == null)
                 {
                     transform.rotation = Quaternion.LookRotation(Player.LocalInstance.transform.up, -Player.LocalInstance.transform.forward);
                 }
 
-                if (Player.LocalInstance.GetPlayerTarget() != null)
+                if (Player.LocalInstance.GetActivePlayerTarget() != null)
                 {
-                    Vector3 direction = Player.LocalInstance.GetPlayerTarget().transform.position - Player.LocalInstance.transform.position;
+                    Vector3 direction = Player.LocalInstance.GetActivePlayerTarget().transform.position - Player.LocalInstance.transform.position;
 
                     Quaternion rotation = Quaternion.LookRotation(direction);
 

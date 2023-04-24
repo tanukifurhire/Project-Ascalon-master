@@ -9,7 +9,7 @@ using UnityEngine;
 public class Player : NetworkBehaviour, ITargetable
 {
     public static Player LocalInstance { get; private set; }
-    
+
     public event EventHandler OnStop;
 
     public event EventHandler OnDestroyed;
@@ -63,6 +63,7 @@ public class Player : NetworkBehaviour, ITargetable
 
     private float actualAccel;
     private bool jump;
+    private bool hover = false;
     private float minVelocity = .1f;
     private float playerHeight = 2.5f;
     private float prepToFlyTimer = .3f;
@@ -74,7 +75,10 @@ public class Player : NetworkBehaviour, ITargetable
     // Targeting Variables
     private List<Transform> playerTargets;
     private Transform target;
+    private Transform currentTarget;
     private bool isPlayerTryingToTarget;
+
+    private AbilityHandler abilityHandler;
 
     #region Unity Default Methods
 
@@ -83,6 +87,8 @@ public class Player : NetworkBehaviour, ITargetable
         state = States.Idle;
 
         playerTargets = new List<Transform>();
+
+        abilityHandler = GetComponentInChildren<AbilityHandler>();
     }
 
     private void Start()
@@ -92,6 +98,9 @@ public class Player : NetworkBehaviour, ITargetable
         GameInput.Instance.OnBoost += Player_OnBoost;
         GameInput.Instance.OnTargetPressed += Player_OnTargetPressed;
         GameInput.Instance.OnTargetReleased += Player_OnTargetReleased;
+        GameInput.Instance.OnHover += Player_OnHover;
+
+        LocalInstance.OnStateChanged += Player_OnStateChanged;
 
         Cursor.lockState = CursorLockMode.Locked;
     }
@@ -338,6 +347,11 @@ public class Player : NetworkBehaviour, ITargetable
         return target;
     }
 
+    public Transform GetActivePlayerTarget()
+    {
+        return currentTarget;
+    }
+
     #endregion
 
     #region Input Methods
@@ -351,13 +365,7 @@ public class Player : NetworkBehaviour, ITargetable
     {
         if (detectCollision.CheckGround())
         {
-            lastState = state;
-            state = States.Jumping;
-            OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-            {
-                state = state,
-                lastState = lastState
-            });
+            ChangeState(States.Jumping);
             jump = true;
         }
     }
@@ -366,24 +374,34 @@ public class Player : NetworkBehaviour, ITargetable
     {
         if (!detectCollision.CheckGround())
         {
-            lastState = state;
-            state = States.PrepToFly;
-            OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-            {
-                state = state,
-                lastState = lastState
-            });
+            ChangeState(States.PrepToFly);
         }
     }
 
     private void Player_OnTargetReleased(object sender, EventArgs e)
     {
         isPlayerTryingToTarget = false;
+
+        currentTarget = null;
     }
 
     private void Player_OnTargetPressed(object sender, EventArgs e)
     {
         isPlayerTryingToTarget = true;
+
+        if (target != null)
+        {
+            currentTarget = target;
+        }
+    }
+
+    private void Player_OnHover(object sender, EventArgs e)
+    {
+        hover = !hover;
+        if (hover)
+        {
+            ChangeState(States.Hover);
+        }
     }
 
     #endregion
@@ -397,48 +415,24 @@ public class Player : NetworkBehaviour, ITargetable
             case States.Idle:
                 if (!detectCollision.CheckGround())
                 {
-                    lastState = state;
-                    state = States.Falling;
-                    OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-                    {
-                        state = state,
-                        lastState = lastState,
-                    });
+                    ChangeState(States.Falling);
                 }
                 if (ReadMovementInput().magnitude > 0f)
                 {
-                    lastState = state;
-                    state = States.Moving;
-                    OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-                    {
-                        state = state,
-                        lastState = lastState
-                    });
+                    ChangeState(States.Moving);
                 }
                 break;
             case States.Moving:
                 if (!detectCollision.CheckGround())
                 {
-                    lastState = state;
-                    state = States.Falling;
-                    OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-                    {
-                        state = state,
-                        lastState = lastState
-                    });
+                    ChangeState(States.Falling);
                 }
                 if (ReadMovementInput().magnitude <= 0f)
                 {
                     if (detectCollision.CheckGround())
                     {
-                        lastState = state;
-                        state = States.Idle;
+                        ChangeState(States.Idle);
                         OnStop?.Invoke(this, EventArgs.Empty);
-                        OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-                        {
-                            state = state,
-                            lastState = lastState
-                        });
                     }
                 }
                 break;
@@ -449,13 +443,7 @@ public class Player : NetworkBehaviour, ITargetable
                 {
                     if (IsPlayerStoppedMovingUpwards())
                     {
-                        lastState = state;
-                        state = States.Falling;
-                        OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-                        {
-                            state = state,
-                            lastState = lastState
-                        });
+                        ChangeState(States.Falling);
                     }
                 }
 
@@ -484,15 +472,7 @@ public class Player : NetworkBehaviour, ITargetable
 
                     prepToFlyTimer = prepToFlyTimerMax;
 
-                    lastState = state;
-
-                    state = States.Flying;
-
-                    OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-                    {
-                        state = state,
-                        lastState = lastState
-                    });
+                    ChangeState(States.Flying);
                 }
 
                 break;
@@ -506,15 +486,7 @@ public class Player : NetworkBehaviour, ITargetable
 
                 if (detectCollision.CheckCollisionWithPlayer())
                 {
-                    lastState = state;
-
-                    state = States.Hover;
-
-                    OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-                    {
-                        state = state,
-                        lastState = lastState
-                    });
+                    ChangeState(States.Hover);
                 }
 
                 break;
@@ -555,6 +527,18 @@ public class Player : NetworkBehaviour, ITargetable
         }
     }
 
+    private void Player_OnStateChanged(object sender, OnStateChangedEventArgs e)
+    {
+        if (state == States.Hover)
+        {
+
+        }
+        else
+        {
+            hover = false;
+        }
+    }
+
     private void OnGroundCheck()
     {
         float jumpBufferTimerMax = 0.1f;
@@ -569,29 +553,28 @@ public class Player : NetworkBehaviour, ITargetable
 
             if (ReadMovementInput().magnitude > 0f)
             {
-                lastState = state;
-                state = States.Moving;
-                OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-                {
-                    state = state,
-                    lastState = lastState
-                });
+                ChangeState(States.Moving);
             }
             else
             {
-                lastState = state;
-                state = States.Idle;
+                ChangeState(States.Idle);
                 OnStop?.Invoke(this, EventArgs.Empty);
-                OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
-                {
-                    state = state,
-                    lastState = lastState
-                });
             }
         }
     }
 
-    public States GetPlayerState()
+    public void ChangeState(States state)
+    {
+        lastState = LocalInstance.state;
+        LocalInstance.state = state;
+        OnStateChanged?.Invoke(this, new OnStateChangedEventArgs
+        {
+            state = state,
+            lastState = lastState
+        });
+    }
+
+public States GetPlayerState()
     {
         return state;
     }
@@ -673,18 +656,11 @@ public class Player : NetworkBehaviour, ITargetable
     {
         var targetRot = Quaternion.LookRotation(-Camera.main.transform.up, Camera.main.transform.forward);
 
-        if (target != null && isPlayerTryingToTarget)
+        if (currentTarget != null)
         {
             FlightTargetHandler.Instance.SetFlightRotation();
 
             targetRot = Quaternion.LookRotation(-FlightTargetHandler.Instance.transform.up, FlightTargetHandler.Instance.GetFlightDirection());
-
-            float dist = Vector3.Distance(target.position, transform.position);
-
-            if (Mathf.Abs(target.position.y - transform.position.y) >= dist / 1.5f)
-            {
-                targetRot = Quaternion.LookRotation(-Camera.main.transform.up, Camera.main.transform.forward);
-            }
         }
 
         return targetRot;
@@ -725,6 +701,11 @@ public class Player : NetworkBehaviour, ITargetable
     public Quaternion GetRigidbodyRotation()
     {
         return rb.rotation;
+    }
+
+    public AbilityHandler GetAbilityHandler()
+    {
+        return abilityHandler;
     }
 
     #endregion

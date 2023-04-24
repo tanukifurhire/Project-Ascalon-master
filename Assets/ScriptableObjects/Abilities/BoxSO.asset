@@ -10,8 +10,11 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a1894835400f6e246acd7f834c24fa3a, type: 3}
-  m_Name: BloxSO
+  m_Name: BoxSO
   m_EditorClassIdentifier: 
-  abilityName: Blox
+  abilityPrefab: {fileID: 3974801966315879846, guid: a6a5d1254d0f16c4eb3b5f5c6c73ffd0,
+    type: 3}
+  abilityName: Box
   abilityDamage: 500
+  abilityCastTime: 1
   abilityType: 1

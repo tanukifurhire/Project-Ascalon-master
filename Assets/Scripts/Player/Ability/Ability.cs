@@ -6,16 +6,17 @@ using UnityEngine;
 
 public class Ability : NetworkBehaviour
 {
-    [SerializeField] private AbilitySO abilitySO;
+    [SerializeField] protected AbilitySO abilitySO;
 
-    private IAbilityParent abilityParent;
+    [SerializeField] private FollowTransform followTransform;
+
+    protected IAbilityParent abilityParent;
+
+    protected float abilityCastTimer;
 
     public void SetAbilityParent(IAbilityParent abilityParent)
     {
-        if (abilityParent.CanAddAbility())
-        {
-            SetAbilityParentServerRpc(abilityParent.GetNetworkObject());
-        }
+        SetAbilityParentServerRpc(abilityParent.GetNetworkObject());
     }
 
     [ServerRpc(RequireOwnership = false)]
@@ -29,7 +30,7 @@ public class Ability : NetworkBehaviour
     {
         abilityNetworkObjectReference.TryGet(out NetworkObject abilityObjectParentNetworkObject);
 
-        IAbilityParent abilityParent = abilityObjectParentNetworkObject.GetComponent<IAbilityParent>();
+        IAbilityParent abilityParent = abilityObjectParentNetworkObject.GetComponentInChildren<IAbilityParent>();
 
         if (this.abilityParent != null)
         {
@@ -39,6 +40,10 @@ public class Ability : NetworkBehaviour
         this.abilityParent = abilityParent;
 
         abilityParent.SetAbility(this);
+
+        Debug.Log(abilityParent);
+
+        followTransform.SetTargetTransform(abilityParent.GetFollowTransform());
     }
 
     public virtual void TriggerAbility()

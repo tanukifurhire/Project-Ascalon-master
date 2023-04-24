@@ -15,11 +15,14 @@ public class CameraManager : MonoBehaviour
     private float flightScreenShakeFrequencyGain = 0.13f;
     private float flightWobbleFrequencyGain = .4f;
     private float flightWobbleAmplitudeGain = .29f;
+    private float mouseX;
+    private float mouseY;
 
     [SerializeField] private AnimationCurve flightScreenShakeCurve;
     [SerializeField] private CinemachineTargetGroup cinemachineTargetGroup;
     [SerializeField] private NoiseSettings flightScreenShakeNoise;
     [SerializeField] private NoiseSettings flightWobbleNoise;
+    [SerializeField] private Vector2 targetLockOffset;
 
     private CinemachineBasicMultiChannelPerlin cinemachineBasicMultiChannelPerlin;
     private CinemachineTransposer cinemachineTransposer;
@@ -64,9 +67,6 @@ public class CameraManager : MonoBehaviour
         {
             if (Player.LocalInstance.GetPlayerTarget() != null)
             {
-                cinemachinePOV.m_VerticalRecentering.m_enabled = true;
-                cinemachinePOV.m_HorizontalRecentering.m_enabled = true;
-
                 isPlayerTryingToTarget = true;
 
                 cinemachineTransposer.m_XDamping = 0.5f;
@@ -123,9 +123,25 @@ public class CameraManager : MonoBehaviour
 
     }
 
-    private void Update()
+    private void LateUpdate()
     {
         if (!isPlayerInitialized) return;
+
+        if (!isPlayerTryingToTarget)
+        {
+            mouseX = GameInput.Instance.LookInputNormalized().x;
+            mouseY = GameInput.Instance.LookInputNormalized().y;
+        }
+        else
+        {
+            Vector3 viewPos = Camera.main.WorldToViewportPoint(Player.LocalInstance.GetActivePlayerTarget().position);
+
+            mouseX = (viewPos.x - 0.5f + (targetLockOffset.x * GameInput.Instance.LookInputNormalized().x)) * 5f;
+            mouseY = (viewPos.y - 0.5f + (targetLockOffset.y * GameInput.Instance.LookInputNormalized().y)) * 5f;
+        }
+
+        cinemachinePOV.m_HorizontalAxis.m_InputAxisValue = mouseX;
+        cinemachinePOV.m_VerticalAxis.m_InputAxisValue = mouseY;
 
         if (Player.LocalInstance.GetPlayerState() == Player.States.Flying)
         {

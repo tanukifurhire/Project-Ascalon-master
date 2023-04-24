@@ -12,6 +12,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a1894835400f6e246acd7f834c24fa3a, type: 3}
   m_Name: FlamizaurusSO
   m_EditorClassIdentifier: 
+  abilityPrefab: {fileID: 0}
   abilityName: Flamizaurus
   abilityDamage: 350
+  abilityCastTime: 1.2
   abilityType: 0
