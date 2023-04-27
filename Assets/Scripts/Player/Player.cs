@@ -410,23 +410,34 @@ public class Player : NetworkBehaviour, ITargetable
 
     private void HandleState()
     {
+        Quaternion targetRot = Quaternion.Euler(0f, Camera.main.transform.eulerAngles.y, 0f);
+
         switch (state)
         {
             case States.Idle:
+
                 if (!detectCollision.CheckGround())
                 {
                     ChangeState(States.Falling);
                 }
+
                 if (ReadMovementInput().magnitude > 0f)
                 {
                     ChangeState(States.Moving);
                 }
+
+                turnSpeed = 2000f;
+
+                rb.rotation = targetRot;
+
                 break;
             case States.Moving:
+
                 if (!detectCollision.CheckGround())
                 {
                     ChangeState(States.Falling);
                 }
+
                 if (ReadMovementInput().magnitude <= 0f)
                 {
                     if (detectCollision.CheckGround())
@@ -435,8 +446,14 @@ public class Player : NetworkBehaviour, ITargetable
                         OnStop?.Invoke(this, EventArgs.Empty);
                     }
                 }
+
+                turnSpeed = 2000f;
+
+                rb.rotation = targetRot;
+
                 break;
             case States.Jumping:
+
                 jumpBufferTimer -= Time.deltaTime;
 
                 if (jump == false)
@@ -452,9 +469,19 @@ public class Player : NetworkBehaviour, ITargetable
                     OnGroundCheck();
                 }
 
+                turnSpeed = 2000f;
+
+                rb.rotation = targetRot;
+
                 break;
             case States.Falling:
+
                 OnGroundCheck();
+
+                turnSpeed = 2000f;
+
+                rb.rotation = targetRot;
+
                 break;
             case States.PrepToFly:
 
@@ -498,22 +525,11 @@ public class Player : NetworkBehaviour, ITargetable
 
                 ResetVerticalVelocity();
 
-                Quaternion targetRot = Quaternion.LookRotation(Camera.main.transform.forward);
-
                 rb.MoveRotation(Quaternion.RotateTowards(transform.rotation, targetRot, turnSpeed * Time.deltaTime));
 
                 rb.useGravity = false;
 
                 break;
-        }
-
-        if (state != States.Flying && state != States.PrepToFly && state != States.Hover)
-        {
-            turnSpeed = 2000f;
-
-            Quaternion targetRot = Quaternion.Euler(0f, Camera.main.transform.eulerAngles.y, 0f);
-
-            rb.MoveRotation(Quaternion.RotateTowards(transform.rotation, targetRot, turnSpeed * Time.deltaTime));
         }
 
         FlightTargetHandler.Instance.SetFlightPosition(transform.position);

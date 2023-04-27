@@ -19,12 +19,12 @@ public class PlayerVisuals : NetworkBehaviour
 
     private void AbilityHandler_OnMeleeAbilityTrigger(object sender, EventArgs e)
     {
-        playerAnimator.SetTrigger("OnMeleeStart");
+        playerAnimator.SetTrigger("OnMeleeExecute");
     }
 
     private void AbilityHandler_OnMeleeAbilityCast(object sender, EventArgs e)
     {
-        playerAnimator.SetTrigger("OnMeleeExecute");
+        playerAnimator.SetTrigger("OnMeleeStart");
     }
 
     private void Player_OnStateChanged(object sender, Player.OnStateChangedEventArgs e)
