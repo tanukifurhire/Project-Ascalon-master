@@ -24,7 +24,7 @@ public class FlightTargetHandler : MonoBehaviour
 
         smoothedInput = Vector2.SmoothDamp(smoothedInput, lookInput, ref smoothVectorVelocity, 0.3f);
 
-        Vector3 facingDirection = new Vector3(smoothedInput.x * 2f, 0f, .25f);
+        Vector3 facingDirection = new Vector3(smoothedInput.x * 2f, 0f, 0.3f);
 
         Vector3 movementDirection = new Vector3(1f, smoothedInput.y, 0f);
 
@@ -37,9 +37,9 @@ public class FlightTargetHandler : MonoBehaviour
             directionAngle -= 360f;
         }
 
-        float directionXAngle = Mathf.Atan2(movementDirection.y, movementDirection.x) * Mathf.Rad2Deg;
+        float directionXAngle = Mathf.Atan2(movementDirection.y, movementDirection.x) * Mathf.Rad2Deg + (30f * smoothedInput.x);
 
-        float additionalAngle = 35f * smoothedInput.x;
+        float additionalAngle = 0f * smoothedInput.x;
 
         transform.rotation = Quaternion.Euler(-directionXAngle, directionAngle + additionalAngle, 0f);
     }

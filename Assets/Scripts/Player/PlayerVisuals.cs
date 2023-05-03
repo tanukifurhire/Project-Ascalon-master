@@ -2,10 +2,12 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using Unity.Netcode;
+using Unity.Netcode.Components;
 using UnityEngine;
 
 public class PlayerVisuals : NetworkBehaviour
 {
+    [SerializeField] private NetworkAnimator playerNetworkAnimator;
     [SerializeField] private Animator playerAnimator;
 
     private const string MOVE_Y = "MoveY";
@@ -19,12 +21,44 @@ public class PlayerVisuals : NetworkBehaviour
 
     private void AbilityHandler_OnMeleeAbilityTrigger(object sender, EventArgs e)
     {
-        playerAnimator.SetTrigger("OnMeleeExecute");
+        if (!IsOwner)
+        {
+            return;
+        }
+        AbilityHandler_OnMeleeAbilityTriggerServerRpc();
+    }
+
+    [ServerRpc (RequireOwnership = false)]
+    private void AbilityHandler_OnMeleeAbilityTriggerServerRpc()
+    {
+        AbilityHandler_OnMeleeAbilityTriggerClientRpc();
+    }
+
+    [ClientRpc]
+    private void AbilityHandler_OnMeleeAbilityTriggerClientRpc()
+    {
+        playerNetworkAnimator.SetTrigger("OnMeleeExecute");
     }
 
     private void AbilityHandler_OnMeleeAbilityCast(object sender, EventArgs e)
     {
-        playerAnimator.SetTrigger("OnMeleeStart");
+        if (!IsOwner)
+        {
+            return;
+        }
+        AbilityHandler_OnMeleeCastServerRpc();
+    }
+
+    [ServerRpc (RequireOwnership = false)]
+    private void AbilityHandler_OnMeleeCastServerRpc()
+    {
+        AbiltyHandler_OnMeleeCastClientRpc();
+    }
+
+    [ClientRpc]
+    private void AbiltyHandler_OnMeleeCastClientRpc()
+    {
+        playerNetworkAnimator.SetTrigger("OnMeleeStart");
     }
 
     private void Player_OnStateChanged(object sender, Player.OnStateChangedEventArgs e)

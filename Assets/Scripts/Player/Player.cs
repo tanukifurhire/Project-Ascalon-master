@@ -8,8 +8,17 @@ using UnityEngine;
 
 public class Player : NetworkBehaviour, ITargetable
 {
+    // Fields
+
     public static Player LocalInstance { get; private set; }
 
+    #region delegates
+    public delegate void HandleMovementDelegate();
+
+    public HandleMovementDelegate handleMovementDelegate;
+    #endregion
+
+    #region events
     public event EventHandler OnStop;
 
     public event EventHandler OnDestroyed;
@@ -21,6 +30,9 @@ public class Player : NetworkBehaviour, ITargetable
         public States state;
         public States lastState;
     }
+    #endregion
+
+    #region StateMachine
     public enum States
     {
         Idle,
@@ -33,14 +45,18 @@ public class Player : NetworkBehaviour, ITargetable
     }
     private States state;
     public States lastState;
+    #endregion
 
+    #region References
     [field: Header("References")]
     [SerializeField] private Rigidbody rb;
     [SerializeField] private GameInput gameInput;
     [SerializeField] private DetectCollision detectCollision;
     [SerializeField] private Transform followTransform;
     [SerializeField] private Image targetSprite;
+    #endregion
 
+    #region Non-Transmutable Stats
     [field: Header("Stats")]
     [SerializeField] private float maxSpeed;
     [SerializeField] private float prepToFlyMaxSpeed = 10f;
@@ -56,11 +72,15 @@ public class Player : NetworkBehaviour, ITargetable
     [SerializeField] private float gravityForce = 9.81f;
     [SerializeField] private float slopeDownwardsForce = 80f;
     [SerializeField] private float maxTargetingRange = 37.5f;
+    #endregion
 
+    #region Slope Movement Stats
     [field: Header("Slope Movement")]
     [SerializeField] private float maxSlopeAngle;
     [SerializeField] private RaycastHit slopeHit;
+    #endregion
 
+    #region Transmutable Stats
     private float actualAccel;
     private bool jump;
     private bool hover = false;
@@ -71,14 +91,20 @@ public class Player : NetworkBehaviour, ITargetable
     private float boostTimer = 2.5f;
     private Vector2 smoothedInput;
     private Vector2 smoothVectorVelocity;
+    #endregion
 
-    // Targeting Variables
+    #region Targeting Variables
     private List<Transform> playerTargets;
     private Transform target;
     private Transform currentTarget;
     private bool isPlayerTryingToTarget;
+    #endregion
 
+    #region Ability Handler
     private AbilityHandler abilityHandler;
+    #endregion
+
+    // Methods
 
     #region Unity Default Methods
 

@@ -334,7 +334,13 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d480ec52b9e517c499dae2238e24da8f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  TransitionStateInfoList: []
+  TransitionStateInfoList:
+  - Layer: 0
+    OriginatingState: -621920912
+    DestinationState: -694105057
+    TransitionDuration: 0.008771956
+    TriggerNameHash: 1431967932
+    TransitionIndex: 0
   m_Animator: {fileID: 9154001637409387728}
 --- !u!1 &4884176946911746604
 GameObject:

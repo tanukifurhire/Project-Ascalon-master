@@ -23,6 +23,7 @@ public class CameraManager : MonoBehaviour
     [SerializeField] private NoiseSettings flightScreenShakeNoise;
     [SerializeField] private NoiseSettings flightWobbleNoise;
     [SerializeField] private Vector2 targetLockOffset;
+    [SerializeField] private float yOffset;
 
     private CinemachineBasicMultiChannelPerlin cinemachineBasicMultiChannelPerlin;
     private CinemachineTransposer cinemachineTransposer;
@@ -137,7 +138,7 @@ public class CameraManager : MonoBehaviour
             Vector3 viewPos = Camera.main.WorldToViewportPoint(Player.LocalInstance.GetActivePlayerTarget().position);
 
             mouseX = (viewPos.x - 0.5f + (targetLockOffset.x * GameInput.Instance.LookInputNormalized().x)) * 5f;
-            mouseY = (viewPos.y - 0.5f + (targetLockOffset.y * GameInput.Instance.LookInputNormalized().y)) * 5f;
+            mouseY = (viewPos.y - (yOffset + (0.02f * Vector3.Distance(new Vector3(Player.LocalInstance.GetActivePlayerTarget().position.x, 0f, Player.LocalInstance.GetActivePlayerTarget().position.z), new Vector3(Player.LocalInstance.transform.position.x, 0f, Player.LocalInstance.transform.position.z))) + (targetLockOffset.y * GameInput.Instance.LookInputNormalized().y))) * 5f;
         }
 
         cinemachinePOV.m_HorizontalAxis.m_InputAxisValue = mouseX;
